@@ -31,8 +31,15 @@
 #include "enet_ethernetif.h"
 #include "lwip_mqtt_id.h"
 
+
 #include "ctype.h"
 #include "stdio.h"
+
+#include "RGB.h"
+#include <GPIO.h>
+#include "bits.h"
+#include "ADC.h"
+#include "string.h"
 
 #include "fsl_device_registers.h"
 #include "fsl_phyksz8081.h"
@@ -75,7 +82,7 @@
 #endif /* EXAMPLE_NETIF_INIT_FN */
 
 /*! @brief MQTT server host name or IP address. */
-#define EXAMPLE_MQTT_SERVER_HOST "broker.hivemq.com"
+#define EXAMPLE_MQTT_SERVER_HOST "io.adafruit.com"
 
 /*! @brief MQTT server port number. */
 #define EXAMPLE_MQTT_SERVER_PORT 1883
@@ -95,6 +102,10 @@ static void connect_to_mqtt(void *ctx);
 /*******************************************************************************
  * Variables
  ******************************************************************************/
+const adc_config_t g_ADC_config = {
+					ADC_0,
+					res_8bits,
+					bus_clock };
 
 static mdio_handle_t mdioHandle = {.ops = &EXAMPLE_MDIO_OPS};
 static phy_handle_t phyHandle   = {.phyAddr = EXAMPLE_PHY_ADDRESS, .mdioHandle = &mdioHandle, .ops = &EXAMPLE_PHY_OPS};
@@ -108,8 +119,8 @@ static char client_id[40];
 /*! @brief MQTT client information. */
 static const struct mqtt_connect_client_info_t mqtt_client_info = {
     .client_id   = (const char *)&client_id[0],
-    .client_user = NULL,
-    .client_pass = NULL,
+    .client_user = "ricardogp",
+    .client_pass = "aio_fgjR40P30NsH4VVOVUJfKECtApVo",
     .keep_alive  = 100,
     .will_topic  = NULL,
     .will_msg    = NULL,
@@ -163,13 +174,14 @@ static void mqtt_incoming_publish_cb(void *arg, const char *topic, u32_t tot_len
 static void mqtt_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t flags)
 {
     int i;
-
+    char dato_entrante[len];
     LWIP_UNUSED_ARG(arg);
 
     for (i = 0; i < len; i++)
     {
         if (isprint(data[i]))
         {
+        	dato_entrante[i] = (char)data[i];
             PRINTF("%c", (char)data[i]);
         }
         else
@@ -182,6 +194,81 @@ static void mqtt_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t f
     {
         PRINTF("\"\r\n");
     }
+
+    if(strcmp(dato_entrante, "ON") == 0){
+    	encender_LED(GREEN_ON);
+    }
+    else{
+        	apagar_LED(GREEN_OFF);
+        }
+
+}
+static char number_to_char(uint8_t number)
+{
+	char new_number = 'A';		// Char to be returned after the translate
+
+	/* Switch case for convert numbers between 0 to 9 to their equivalent char representation */
+	switch(number)
+	{
+	case 0:
+		new_number  = '0';
+		break;
+	case 1:
+		new_number  = '1';
+		break;
+	case 2:
+		new_number  = '2';
+		break;
+	case 3:
+		new_number  = '3';
+		break;
+	case 4:
+		new_number  = '4';
+		break;
+	case 5:
+		new_number  = '5';
+		break;
+	case 6:
+		new_number  = '6';
+		break;
+	case 7:
+		new_number  = '7';
+		break;
+	case 8:
+		new_number  = '8';
+		break;
+	case 9:
+		new_number  = '9';
+		break;
+	default:
+		new_number  = '1';
+	}
+
+	return new_number;
+}
+static char* float_to_string(float adc_meas)
+{
+	uint8_t adc_entire;				// Entire part of the adc measure
+	uint8_t adc_decimal;			// Fractional part of the adc measure
+	float   adc_aux;				// Auxiliary to calculate the decimal part
+	static char aux_message [3];	// Char array to save the converted values
+	char*  adc_message;				// Pointer to be returned
+
+	/* Getting the entire part */
+	adc_entire = (uint8_t)adc_meas;
+
+	/* Getting the fractional part */
+	adc_aux = adc_meas - adc_entire;
+	adc_decimal = (uint8_t)(adc_aux*10);
+
+	/* Writing the message usying the number to char function */
+	aux_message[0] = number_to_char(adc_entire);
+	aux_message[1] = '.';
+	aux_message[2] = number_to_char(adc_decimal);
+
+	adc_message = aux_message;
+
+	return adc_message;
 }
 
 /*!
@@ -189,8 +276,8 @@ static void mqtt_incoming_data_cb(void *arg, const u8_t *data, u16_t len, u8_t f
  */
 static void mqtt_subscribe_topics(mqtt_client_t *client)
 {
-    static const char *topics[] = {"lwip_topic/#", "lwip_other/#"};
-    int qos[]                   = {0, 1};
+    static const char *topics[] = {"ricardogp/feeds/adc2", "ricardogp/feeds/level","ricardogp/feeds/boton"};
+    int qos[]                   = {1, 1,1};
     err_t err;
     int i;
 
@@ -293,11 +380,16 @@ static void mqtt_message_published_cb(void *arg, err_t err)
  */
 static void publish_message(void *ctx)
 {
-    static const char *topic   = "lwip_topic/100";
-    static const char *message = "message from board";
+    static const char *topic   = "ricardogp/feeds/adc2";
+    static const char *message = "10";
 
+
+    static uint8_t ADC_value;
+    static float  value_convert;
     LWIP_UNUSED_ARG(ctx);
-
+    ADC_value=ADC_result(ADC_0);
+    value_convert = (ADC_value * 3.3)/255;
+    message = float_to_string(value_convert);
     PRINTF("Going to publish to the topic \"%s\"...\r\n", topic);
 
     mqtt_publish(mqtt_client, topic, message, strlen(message), 1, 0, mqtt_message_published_cb, (void *)topic);
@@ -306,6 +398,14 @@ static void publish_message(void *ctx)
 /*!
  * @brief Application thread.
  */
+
+/*static void task_prueba(void *arg)
+{
+	 struct netif *netif = (struct netif *)arg;
+	    struct dhcp *dhcp;
+	    err_t err;
+	    int i;
+}*/
 static void app_thread(void *arg)
 {
     struct netif *netif = (struct netif *)arg;
@@ -368,7 +468,7 @@ static void app_thread(void *arg)
     }
 
     /* Publish some messages */
-    for (i = 0; i < 5;)
+   for (i = 0; i <50 ;)
     {
         if (connected)
         {
@@ -378,12 +478,13 @@ static void app_thread(void *arg)
                 PRINTF("Failed to invoke publishing of a message on the tcpip_thread: %d.\r\n", err);
             }
             i++;
+
         }
 
         sys_msleep(1000U);
     }
 
-    vTaskDelete(NULL);
+  vTaskDelete(NULL);
 }
 
 static void generate_client_id(void)
@@ -429,6 +530,9 @@ int main(void)
     /* Disable SYSMPU. */
     base->CESR &= ~SYSMPU_CESR_VLD_MASK;
     generate_client_id();
+    RGB_init();
+
+    ADC_init(&g_ADC_config);
 
     mdioHandle.resource.csrClock_Hz = EXAMPLE_CLOCK_FREQ;
 
@@ -462,6 +566,11 @@ int main(void)
     {
         LWIP_ASSERT("main(): Task creation failed.", 0);
     }
+
+   /* if (sys_thread_new("task_prueba", task_prueba, &netif, APP_THREAD_STACKSIZE, APP_THREAD_PRIO) == NULL)
+        {
+            LWIP_ASSERT("main(): Task creation failed.", 0);
+        }*/
 
     vTaskStartScheduler();
 
