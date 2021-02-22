@@ -468,8 +468,8 @@ static void app_thread(void *arg)
     }
 
     /* Publish some messages */
-   for (i = 0; i <50 ;)
-    {
+   //for (i = 0; i <50 ;)
+    //{
         if (connected)
         {
             err = tcpip_callback(publish_message, NULL);
@@ -482,7 +482,7 @@ static void app_thread(void *arg)
         }
 
         sys_msleep(1000U);
-    }
+   // }
 
   vTaskDelete(NULL);
 }
